@@ -1,0 +1,28 @@
+{
+  "name": "rainmaker",
+  "version": "0.1.0",
+  "description": "Autonomous ICP lead-generation agent",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@openrouter/sdk": "^1.2.51",
+    "lowdb": "^7.0.1",
+    "next": "^16.3.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^10.8.1",
+    "eslint-config-next": "^16.3.2",
+    "typescript": "^7.0.2"
+  }
+}

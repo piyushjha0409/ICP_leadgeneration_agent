@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rainmaker</title>
+<style>
+  /* ============ TOKENS ============ */
+  :root {
+    /* light — "meteorological chart on cool paper" */
+    --bg:        #F5F7FA;
+    --bg-2:      #EAEEF4;
+    --surface:   #FFFFFF;
+    --surface-2: #F8FAFC;
+    --ink:       #0E1826;
+    --ink-soft:  #33475F;
+    --muted:     #5C6E85;
+    --faint:     #8A9AAF;
+    --border:    #DCE3ED;
+    --border-2:  #C9D4E1;
+    --accent:    #1E7FE0;   /* signal blue */
+    --accent-rgb: 30,127,224;
+    --accent-soft: #E7F0FC;
+    --hot:       #B26A0A;    /* amber — hot lead / why-now */
+    --hot-rgb:   178,106,10;
+    --hot-soft:  #FBEEDA;
+    --radar-line: rgba(30,127,224,0.16);
+    --shadow:    0 1px 2px rgba(14,24,38,.06), 0 12px 32px -12px rgba(14,24,38,.18);
+    --shadow-sm: 0 1px 2px rgba(14,24,38,.05), 0 4px 14px -8px rgba(14,24,38,.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0A0F16;
+      --bg-2:      #0D141D;
+      --surface:   #111A24;
+      --surface-2: #0E1620;
+      --ink:       #E7EEF6;
+      --ink-soft:  #C0CCDB;
+      --muted:     #8DA1B8;
+      --faint:     #5D6F85;
+      --border:    #1E2A38;
+      --border-2:  #2A3A4C;
+      --accent:    #3BB4FF;
+      --accent-rgb: 59,180,255;
+      --accent-soft: #10233A;
+      --hot:       #F5B33D;
+      --hot-rgb:   245,179,61;
+      --hot-soft:  #2A2113;
+      --radar-line: rgba(59,180,255,0.20);
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 16px 40px -14px rgba(0,0,0,.7);
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px -10px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:        #0A0F16;
+    --bg-2:      #0D141D;
+    --surface:   #111A24;
+    --surface-2: #0E1620;
+    --ink:       #E7EEF6;
+    --ink-soft:  #C0CCDB;
+    --muted:     #8DA1B8;
+    --faint:     #5D6F85;
+    --border:    #1E2A38;
+    --border-2:  #2A3A4C;
+    --accent:    #3BB4FF;
+    --accent-rgb: 59,180,255;
+    --accent-soft: #10233A;
+    --hot:       #F5B33D;
+    --hot-rgb:   245,179,61;
+    --hot-soft:  #2A2113;
+    --radar-line: rgba(59,180,255,0.20);
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 16px 40px -14px rgba(0,0,0,.7);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px -10px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .mono { font-family: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Code", monospace; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  h1, h2, h3 { text-wrap: balance; margin: 0; letter-spacing: -0.02em; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+
+  /* ============ THEME TOGGLE ============ */
+  .toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 50;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--muted); border: 1px solid var(--border); border-radius: 999px;
+    padding: 7px 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .toggle:hover { color: var(--ink); border-color: var(--border-2); }
+  .toggle .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(var(--accent-rgb),.7); }
+
+  /* ============ HERO ============ */
+  .hero {
+    position: relative; overflow: hidden; border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(120% 90% at 85% -10%, rgba(var(--accent-rgb),0.10), transparent 60%),
+      linear-gradient(180deg, var(--bg-2), var(--bg));
+  }
+  .hero .wrap { padding-top: 80px; padding-bottom: 68px; }
+  .hero-grid { display: grid; grid-template-columns: 1.28fr 0.72fr; gap: 48px; align-items: center; }
+  @media (max-width: 860px) { .hero-grid { grid-template-columns: 1fr; gap: 40px; } }
+
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .live {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 5px 11px;
+  }
+  .live .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 0 0 rgba(var(--hot-rgb),.55); animation: pulse 2.4s ease-out infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--hot-rgb),.55); } 70% { box-shadow: 0 0 0 9px rgba(var(--hot-rgb),0); } 100% { box-shadow: 0 0 0 0 rgba(var(--hot-rgb),0); } }
+
+  h1.title { font-size: clamp(50px, 8.2vw, 88px); line-height: 0.95; font-weight: 800; letter-spacing: -0.045em; margin: 20px 0 0; }
+  h1.title .drop { color: var(--accent); }
+  .subtitle { font-family: ui-monospace, Menlo, monospace; font-size: clamp(13px,1.8vw,15px); letter-spacing: 0.06em; color: var(--ink-soft); margin-top: 14px; text-transform: uppercase; }
+  .lede { font-size: clamp(18px, 2.4vw, 22px); color: var(--ink-soft); max-width: 42ch; margin: 16px 0 0; line-height: 1.45; }
+  .lede b { color: var(--ink); font-weight: 650; }
+
+  .badge-row { display: flex; gap: 10px; margin-top: 28px; flex-wrap: wrap; }
+  .badge {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; letter-spacing: 0.03em;
+    color: var(--ink-soft); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; box-shadow: var(--shadow-sm);
+  }
+  .badge b { color: var(--accent); }
+
+  /* ---- radar ---- */
+  .radar-wrap { display: flex; justify-content: center; }
+  .radar {
+    position: relative; width: 280px; height: 280px; max-width: 78vw; aspect-ratio: 1;
+    border-radius: 50%; border: 1px solid var(--border-2);
+    background:
+      repeating-radial-gradient(circle at center, transparent 0 45px, var(--radar-line) 45px 46px),
+      radial-gradient(circle at center, rgba(var(--accent-rgb),0.06), transparent 70%),
+      var(--surface-2);
+    box-shadow: var(--shadow), inset 0 0 40px rgba(var(--accent-rgb),0.05);
+  }
+  .radar::before {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    background:
+      linear-gradient(var(--radar-line), var(--radar-line)) center / 1px 100% no-repeat,
+      linear-gradient(var(--radar-line), var(--radar-line)) center / 100% 1px no-repeat;
+  }
+  .radar .sweep {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0deg 290deg, rgba(var(--accent-rgb),0.28) 355deg, rgba(var(--accent-rgb),0.42) 360deg);
+    -webkit-mask: radial-gradient(circle, #000 0 100%);
+    animation: sweep 4.2s linear infinite;
+  }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+  .blip { position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--hot); box-shadow: 0 0 10px rgba(var(--hot-rgb),.9); transform: translate(-50%, -50%); animation: blip 4.2s ease-in-out infinite; }
+  .blip.b1 { left: 68%; top: 34%; animation-delay: .2s; }
+  .blip.b2 { left: 39%; top: 61%; animation-delay: 1.7s; }
+  .blip.b3 { left: 58%; top: 72%; animation-delay: 3.0s; }
+  .blip.b4 { left: 30%; top: 33%; background: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-rgb),.9); animation-delay: 2.4s; }
+  @keyframes blip { 0%, 100% { opacity: .15; } 12% { opacity: 1; } 45% { opacity: .35; } }
+  .radar .core { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); transform: translate(-50%,-50%); box-shadow: 0 0 12px rgba(var(--accent-rgb),.9); }
+  @media (prefers-reduced-motion: reduce) {
+    .radar .sweep { animation: none; opacity: .5; }
+    .blip { animation: none; opacity: .85; }
+    .live .pulse { animation: none; }
+  }
+
+  /* ============ SECTIONS ============ */
+  section { padding: 70px 0; border-bottom: 1px solid var(--border); }
+  .sec-head { margin-bottom: 34px; }
+  .sec-head .eyebrow { display: block; margin-bottom: 12px; }
+  .sec-head h2 { font-size: clamp(27px, 3.9vw, 37px); font-weight: 750; line-height: 1.1; }
+  .sec-head p { color: var(--muted); max-width: 64ch; margin: 14px 0 0; font-size: 17px; }
+
+  /* problem stats */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 760px) { .stats { grid-template-columns: 1fr; } }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; box-shadow: var(--shadow-sm); }
+  .stat .num { font-size: 46px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stat .num .u { font-size: 24px; color: var(--muted); font-weight: 700; }
+  .stat .lab { margin-top: 12px; color: var(--ink-soft); font-size: 15.5px; line-height: 1.45; }
+  .stat .src { margin-top: 14px; }
+  .stat .src a { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.03em; color: var(--faint); }
+  .stat .src a:hover { color: var(--accent); }
+
+  .pull { margin-top: 34px; padding: 22px 26px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 12px 12px 0; font-size: 18px; color: var(--ink-soft); }
+  .pull b { color: var(--ink); }
+  .pull.a { border-left-color: var(--hot); }
+
+  /* differentiators */
+  .diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 820px) { .diff-grid { grid-template-columns: 1fr; } }
+  .diff { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; box-shadow: var(--shadow-sm); }
+  .diff .tag { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+  .diff h3 { font-size: 19px; margin: 12px 0 8px; font-weight: 700; }
+  .diff p { color: var(--muted); font-size: 15.5px; margin: 0; }
+  .vs { text-align: center; margin-bottom: 30px; }
+  .vs .mono { font-size: 13px; color: var(--faint); letter-spacing: 0.04em; }
+  .vs .mono b { color: var(--ink-soft); }
+
+  /* pipeline */
+  .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: step; }
+  @media (max-width: 820px) { .flow { grid-template-columns: 1fr; } }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: var(--shadow-sm); }
+  .step .n { font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.1em; display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .step .n::before { content: counter(step, decimal-leading-zero); counter-increment: step; background: var(--accent-soft); color: var(--accent); border-radius: 7px; padding: 3px 8px; }
+  .step h3 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .step p { color: var(--muted); font-size: 14.5px; margin: 0; }
+  .loop-note { margin-top: 18px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+  .loop-note .arw { color: var(--accent); }
+
+  /* signal console */
+  .console { background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 10px; box-shadow: var(--shadow-sm); }
+  .console-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 14px; border-bottom: 1px dashed var(--border); }
+  .console-bar .mono { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+  .console-bar .on { color: var(--hot); }
+  .sig-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px; padding: 6px; }
+  @media (max-width: 720px) { .sig-grid { grid-template-columns: 1fr; } }
+  .sig { display: flex; gap: 14px; align-items: flex-start; padding: 16px 14px; border-radius: 10px; }
+  .sig:hover { background: var(--surface); }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 22px; margin-top: 3px; flex: none; width: 26px; }
+  .bars i { width: 5px; background: var(--border-2); border-radius: 1px; display: block; }
+  .bars i.on { background: var(--hot); }
+  .sig .t { font-size: 15.5px; font-weight: 650; color: var(--ink); }
+  .sig .d { font-size: 13.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+
+  /* dossier */
+  .dossier { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+  .dos-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 22px 24px; border-bottom: 1px solid var(--border); background: linear-gradient(180deg, var(--surface-2), var(--surface)); }
+  .dos-head .co { font-size: 21px; font-weight: 750; }
+  .dos-head .meta { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--muted); margin-top: 6px; }
+  .score { text-align: center; flex: none; }
+  .score .ring { width: 68px; height: 68px; border-radius: 50%; background: conic-gradient(var(--hot) 0 92%, var(--border) 92% 100%); display: grid; place-items: center; margin: 0 auto; }
+  .score .ring span { width: 54px; height: 54px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-family: ui-monospace, Menlo, monospace; font-weight: 700; font-size: 19px; color: var(--hot); }
+  .score .cap { font-family: ui-monospace, Menlo, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-top: 7px; }
+  .dos-body { padding: 22px 24px; display: grid; gap: 18px; }
+  .dos-row .k { font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 13px; padding: 6px 11px; border-radius: 999px; background: var(--hot-soft); color: var(--hot); border: 1px solid rgba(var(--hot-rgb),.28); font-weight: 600; }
+  .chip.cool { background: var(--accent-soft); color: var(--accent); border-color: rgba(var(--accent-rgb),.28); }
+  .dos-row .v { color: var(--ink-soft); font-size: 15.5px; }
+  .dos-row .v b { color: var(--ink); }
+  .draft { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 15px 16px; font-size: 14.5px; color: var(--ink-soft); line-height: 1.5; }
+  .draft .q { color: var(--accent); font-weight: 700; }
+  .flag { display: inline-flex; align-items: center; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+  .flag .d { width: 7px; height: 7px; border-radius: 50%; background: var(--hot); }
+
+  /* win — discover/vet/launch */
+  .win-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 820px) { .win-grid { grid-template-columns: 1fr; } }
+  .win { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 24px; box-shadow: var(--shadow-sm); }
+  .win .h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .win .h .step-n { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); font-weight: 700; }
+  .win .h h3 { font-size: 19px; font-weight: 750; }
+  .win p { color: var(--muted); font-size: 15px; margin: 0; }
+  .win .check { color: var(--hot); font-weight: 700; }
+
+  /* two-col (tech + roadmap) */
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  @media (max-width: 820px) { .two { grid-template-columns: 1fr; gap: 44px; } }
+  ul.clean { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  ul.clean li { position: relative; padding-left: 22px; color: var(--ink-soft); font-size: 15.5px; }
+  ul.clean li::before { content: ""; position: absolute; left: 2px; top: 9px; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); }
+  ul.clean li b { color: var(--ink); }
+  .roadmap li::before { background: var(--hot); }
+
+  /* reviewer notes */
+  .review { background: repeating-linear-gradient(180deg, transparent 0 37px, var(--border) 37px 38px); border: 1px solid var(--border-2); border-radius: 14px; padding: 20px 24px 8px; min-height: 220px; }
+  .review-intro { color: var(--muted); font-size: 14.5px; margin: 0 0 20px; }
+  .review-intro code { font-family: ui-monospace, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-size: 13px; color: var(--ink-soft); }
+
+  .open-q { margin-top: 30px; display: grid; gap: 12px; }
+  .open-q .q { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--hot); border-radius: 0 12px 12px 0; padding: 16px 20px; }
+  .open-q .q .mono { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--hot); }
+  .open-q .q p { margin: 6px 0 0; color: var(--ink-soft); font-size: 15.5px; }
+
+  /* footer */
+  footer { padding: 40px 0 64px; border-bottom: none; }
+  .foot { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; color: var(--faint); font-family: ui-monospace, Menlo, monospace; font-size: 12px; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+
+<button class="toggle mono" id="themeToggle" aria-label="Toggle color theme">
+  <span class="dot"></span><span id="themeLabel">Theme</span>
+</button>
+
+<!-- ============ HERO ============ -->
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Orion Agents · Hackathon Concept</span>
+        <div class="status-row" style="margin:20px 0 4px;">
+          <span class="live"><span class="pulse"></span>Autonomous · Always scanning</span>
+        </div>
+        <h1 class="title">Rain<span class="drop">maker</span></h1>
+        <p class="subtitle">The ICP lead-generation agent</p>
+        <p class="lede">Define your <b>Ideal Customer Profile</b> once. Rainmaker autonomously hunts the open web for the companies that match — spots the <b>signals that mean they need you now</b> — and hands you a ranked, ready-to-contact shortlist.</p>
+        <div class="badge-row">
+          <span class="badge"><b>Set your ICP</b> once — it works it forever</span>
+          <span class="badge"><b>4–6 hrs</b> of prospecting → minutes</span>
+        </div>
+      </div>
+      <div class="radar-wrap" aria-hidden="true">
+        <div class="radar">
+          <div class="sweep"></div>
+          <span class="blip b1"></span>
+          <span class="blip b2"></span>
+          <span class="blip b3"></span>
+          <span class="blip b4"></span>
+          <span class="core"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ PROBLEM ============ -->
+<section id="problem">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The bottleneck</span>
+      <h2>Agencies know their ideal client — they just don't have the hours to go find them.</h2>
+      <p>New-business prospecting against an ICP is manual, slow, and mostly wasted on near-misses. It's the cobbler's-children problem: the team is buried in client work while its own pipeline runs dry.</p>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <div class="num">71<span class="u">%</span></div>
+        <div class="lab">of marketing agencies have <b>no system</b> for generating their own clients.</div>
+        <div class="src"><a href="https://overloop.com/blog/lead-generation-for-marketing-agency" target="_blank" rel="noopener">overloop.com ↗</a></div>
+      </div>
+      <div class="stat">
+        <div class="num">4–6<span class="u">hrs</span></div>
+        <div class="lab">of manual research per batch of a few hundred contacts — LinkedIn, directories, sites, one at a time.</div>
+        <div class="src"><a href="https://overloop.com/blog/lead-generation-for-marketing-agency" target="_blank" rel="noopener">overloop.com ↗</a></div>
+      </div>
+      <div class="stat">
+        <div class="num">43<span class="u">%</span></div>
+        <div class="lab">higher win rate for agencies with a <b>real qualification process</b> — a sharp ICP, worked consistently.</div>
+        <div class="src"><a href="https://www.involve.me/blog/lead-generation-for-digital-marketing-agencies" target="_blank" rel="noopener">involve.me ↗</a></div>
+      </div>
+    </div>
+    <div class="pull">
+      The pain isn't <b>"give me a list of companies"</b> — databases already do that. It's <b>"work my ICP for me: find the <i>right</i> companies, prove they fit and need me <i>now</i>, and don't waste my time with false positives."</b> That's judgment, not a lookup.
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHAT IT IS ============ -->
+<section id="what">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Why it's not "just Clay or Apollo"</span>
+      <h2>Databases hand you 275M contacts and leave the ICP thinking to you.</h2>
+      <p>Rainmaker does the thinking. It differs on three axes that matter to an agency working a specific ideal client.</p>
+    </div>
+    <div class="vs"><span class="mono"><b>STATIC DATABASE + MANUAL PIPELINE</b> &nbsp;→&nbsp; AUTONOMOUS ICP AGENT</span></div>
+    <div class="diff-grid">
+      <div class="diff">
+        <span class="tag">01 · Fresh</span>
+        <h3>Open-web &amp; live</h3>
+        <p>Researches the current web — news, sites, job boards, socials, funding feeds — so signals are fresh, not months-old database rows.</p>
+      </div>
+      <div class="diff">
+        <span class="tag">02 · Fit</span>
+        <h3>Reasons about the ICP</h3>
+        <p>Answers a judgment question — does <i>this</i> company genuinely match <i>your</i> ideal profile? — instead of matching a checkbox filter.</p>
+      </div>
+      <div class="diff">
+        <span class="tag">03 · Timing</span>
+        <h3>Detects "why-now"</h3>
+        <p>Hunts the buying signals an agency uniquely cares about — the tells that an ICP-fit company is about to spend on marketing.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW IT WORKS ============ -->
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The autonomous loop</span>
+      <h2>Six steps, running unattended — anchored on your ICP.</h2>
+      <p>Point it at your ideal-client profile once. It searches, browses, reasons, scores, and writes — then keeps going on a schedule, learning from your thumbs up/down.</p>
+    </div>
+    <div class="flow">
+      <div class="step"><span class="n">ICP</span><h3>Lock the profile</h3><p>From your inputs — or by reading your own site — it derives who to target and the pain you solve.</p></div>
+      <div class="step"><span class="n">Hunt</span><h3>Surface matches</h3><p>Web-search and browse across many angles to build a candidate set beyond any single database.</p></div>
+      <div class="step"><span class="n">Signal-scan</span><h3>Find "why now"</h3><p>For each candidate, look for the timing triggers that mean they're about to buy marketing.</p></div>
+      <div class="step"><span class="n">Qualify</span><h3>Score 0–100</h3><p>Weigh ICP-fit × pain × budget × a reachable decision-maker into one explainable score.</p></div>
+      <div class="step"><span class="n">Brief</span><h3>Dossier + draft</h3><p>Write a dossier, a tailored pitch angle, and a ready-to-send first-touch message.</p></div>
+      <div class="step"><span class="n">Loop</span><h3>Run &amp; learn</h3><p>Runs on a schedule, dedupes what it's seen, and sharpens targeting from your feedback.</p></div>
+    </div>
+    <div class="loop-note mono"><span class="arw">↻</span> Continuous — fresh signals in, ranked prospects out. It never stops scanning.</div>
+  </div>
+</section>
+
+<!-- ============ SIGNALS ============ -->
+<section id="signals">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The secret sauce</span>
+      <h2>The "why-now" signals it watches for.</h2>
+      <p>Each detected signal both ranks an ICP-fit prospect higher <i>and</i> becomes the personalized opening line that turns a cold list into a warm conversation.</p>
+    </div>
+    <div class="console">
+      <div class="console-bar">
+        <span class="mono">SIGNAL MONITOR</span>
+        <span class="mono on">● LISTENING</span>
+      </div>
+      <div class="sig-grid">
+        <div class="sig"><span class="bars"><i class="on" style="height:40%"></i><i class="on" style="height:65%"></i><i class="on" style="height:100%"></i></span><div><div class="t">Recently raised funding</div><div class="d">Series A/B → actively spending on growth and hiring.</div></div></div>
+        <div class="sig"><span class="bars"><i class="on" style="height:45%"></i><i class="on" style="height:75%"></i><i class="on" style="height:100%"></i></span><div><div class="t">New marketing leader</div><div class="d">A new CMO / VP / Head of Growth buys tools &amp; agencies in their first 90 days.</div></div></div>
+        <div class="sig"><span class="bars"><i class="on" style="height:50%"></i><i class="on" style="height:80%"></i><i style="height:100%"></i></span><div><div class="t">Hiring for marketing roles</div><div class="d">They feel the capability gap themselves — and are budgeting for it.</div></div></div>
+        <div class="sig"><span class="bars"><i class="on" style="height:55%"></i><i class="on" style="height:85%"></i><i style="height:100%"></i></span><div><div class="t">Weak digital presence</div><div class="d">Slow / dated site, thin blog, no recent content, poor SEO.</div></div></div>
+        <div class="sig"><span class="bars"><i class="on" style="height:60%"></i><i style="height:80%"></i><i style="height:100%"></i></span><div><div class="t">Losing to competitors</div><div class="d">A rival outranking or outspending them on ads and search.</div></div></div>
+        <div class="sig"><span class="bars"><i class="on" style="height:60%"></i><i style="height:80%"></i><i style="height:100%"></i></span><div><div class="t">Launch, expansion or rebrand</div><div class="d">A product launch or new market means a marketing push is coming.</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OUTPUT / DOSSIER ============ -->
+<section id="output">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">What the agency receives</span>
+      <h2>Not a raw CSV — a ranked prospect, ready to contact.</h2>
+      <p>Delivered to a dashboard, Slack, or an email digest, refreshed on a schedule. Here's a single entry.</p>
+    </div>
+    <div class="dossier">
+      <div class="dos-head">
+        <div>
+          <div class="co">Nimbus Analytics</div>
+          <div class="meta">B2B SaaS · ~45 employees · Austin, TX</div>
+        </div>
+        <div class="score">
+          <div class="ring"><span>92</span></div>
+          <div class="cap">ICP-fit</div>
+        </div>
+      </div>
+      <div class="dos-body">
+        <div class="dos-row">
+          <div class="k">Why it scored high · signals detected</div>
+          <div class="chips">
+            <span class="chip">Series A · $14M · 3 weeks ago</span>
+            <span class="chip">Hiring "Head of Growth"</span>
+            <span class="chip">Blog dormant 5 months</span>
+            <span class="chip cool">Outranked on 4 core keywords</span>
+          </div>
+        </div>
+        <div class="dos-row">
+          <div class="k">Right person to reach</div>
+          <div class="v"><b>Dana Reyes</b> — VP Marketing · joined 2 months ago</div>
+        </div>
+        <div class="dos-row">
+          <div class="k">Pitch angle</div>
+          <div class="v">Fresh funding + a growth hire + a stalled content engine = they need pipeline fast and lack the in-house horsepower to build it this quarter.</div>
+        </div>
+        <div class="dos-row">
+          <div class="k">Drafted first touch</div>
+          <div class="draft"><span class="q">"</span>Dana — congrats on the raise and the new role. Noticed you're hiring a Head of Growth while the blog's been quiet since spring; we help post-Series-A SaaS teams turn on demand generation in weeks, not quarters. Worth a 15-minute look at how we'd approach your first 90 days?<span class="q">"</span></div>
+        </div>
+        <div class="dos-row">
+          <span class="flag"><span class="d"></span>Risk check: no agency-of-record detected · confidence 0.86</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHY IT WINS ============ -->
+<section id="win">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Why it wins this hackathon</span>
+      <h2>It <i>is</i> the kind of agent Orion exists to sell.</h2>
+      <p>Orion is a marketplace to <b>discover, vet, and launch</b> autonomous agents. Rainmaker maps onto all three.</p>
+    </div>
+    <div class="win-grid">
+      <div class="win">
+        <div class="h"><span class="step-n">01</span><h3>Discoverable</h3></div>
+        <p><span class="check">✓</span> Every agency wants this. A crisp, universal commercial story — a category, not a one-off.</p>
+      </div>
+      <div class="win">
+        <div class="h"><span class="step-n">02</span><h3>Vettable</h3></div>
+        <p><span class="check">✓</span> Impact is measurable — leads/week, hours saved, cost per lead vs. a human SDR — and every score shows its reasoning and the sources behind it.</p>
+      </div>
+      <div class="win">
+        <div class="h"><span class="step-n">03</span><h3>Launchable</h3></div>
+        <p><span class="check">✓</span> A genuine autonomous loop that runs on a schedule — not a chatbot. Point it at a real ICP and go.</p>
+      </div>
+    </div>
+    <div class="pull a">
+      <b>Demo in 3 minutes:</b> define an ICP → watch it hunt and score across the live web → out come ranked, briefed prospects with draft emails. That was ~2 minutes; by hand it's 4–6 hours — and it never stops.
+    </div>
+  </div>
+</section>
+
+<!-- ============ TECH + ROADMAP ============ -->
+<section id="build">
+  <div class="wrap">
+    <div class="two">
+      <div>
+        <div class="sec-head" style="margin-bottom:24px;">
+          <span class="eyebrow">Under the hood</span>
+          <h2 style="font-size:26px;">The build sketch</h2>
+        </div>
+        <ul class="clean">
+          <li><b>Reasoning core</b> — an autonomous agent loop: search → browse → reason → score → write, running unattended on a schedule.</li>
+          <li><b>Tools</b> — web search + a headless browser to read sites, job boards and socials; contact lookup as a pluggable commodity.</li>
+          <li><b>Scale</b> — the agent fans out over candidates in parallel; each is researched and scored independently, then deduped and ranked.</li>
+          <li><b>Memory</b> — stores seen companies + your feedback to avoid repeats and sharpen the ICP over time.</li>
+          <li><b>Surface</b> — one screen: paste an agency URL → watch the reasoning trace → ranked result cards with dossiers.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="sec-head" style="margin-bottom:24px;">
+          <span class="eyebrow">After the MVP</span>
+          <h2 style="font-size:26px;">Roadmap</h2>
+        </div>
+        <ul class="clean roadmap">
+          <li><b>Auto-send &amp; reply-handling</b> — graduate from lead-gen into a full outbound SDR.</li>
+          <li><b>Win/loss learning</b> — feed closed deals back so it auto-tunes the ICP.</li>
+          <li><b>"Competitor's clients" mode</b> — find companies working with a rival agency.</li>
+          <li><b>Multi-channel</b> — email + LinkedIn + warm-intro path detection.</li>
+        </ul>
+        <div class="pull" style="margin-top:26px;font-size:16px;">
+          <b>MVP scope for the hackathon:</b> ICP in → ranked, briefed leads + draft messages out. No auto-sending — cleaner demo, zero spam risk.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPEN QUESTIONS + REVIEW ============ -->
+<section id="review">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Still to decide</span>
+      <h2>Two open calls before we build.</h2>
+    </div>
+    <div class="open-q">
+      <div class="q">
+        <span class="mono">Scope</span>
+        <p>MVP stops at <b>ranked, briefed leads + draft messages</b>, or push all the way to <b>actually sending outreach</b>? (Leaning: stop at drafts.)</p>
+      </div>
+      <div class="q">
+        <span class="mono">Persona</span>
+        <p>Demo for an agency finding <b>its own</b> ICP-fit clients, or agencies running ICP lead-gen <b>as a service for their clients</b>? (Leaning: its own — most relatable, self-referential Orion fit.)</p>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin:52px 0 20px;">
+      <span class="eyebrow">Your turn</span>
+      <h2 style="font-size:26px;">Reviewer notes</h2>
+    </div>
+    <p class="review-intro">Add your manual review below. This is a plain HTML file — open it in your editor and type your notes inside the <code>&lt;!-- REVIEW --&gt;</code> block, or just write on the lines when printed. Nothing here is locked.</p>
+    <!-- ================= REVIEW: ADD YOUR NOTES BELOW ================= -->
+    <div class="review">
+      <!-- REVIEW -->
+      &nbsp;
+    </div>
+    <!-- =============================================================== -->
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <span>RAINMAKER · ICP LEAD-GEN AGENT · CONCEPT v0.3</span>
+      <span>ORION AGENTS HACKATHON · 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById('themeToggle');
+    var label = document.getElementById('themeLabel');
+    function current() {
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr) return attr;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function sync() { label.textContent = current() === 'dark' ? 'Light' : 'Dark'; }
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      sync();
+    });
+    sync();
+  })();
+</script>
+
+</body>
+</html>
