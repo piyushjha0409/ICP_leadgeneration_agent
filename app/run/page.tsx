@@ -2,27 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { SseFrame } from "@/app/api/run/stream/route";
-import type { PipelineEvent, PipelineStage } from "@/src/pipeline/types";
+import type { PipelineEvent } from "@/src/pipeline/types";
 import type { RunResult } from "@/src/pipeline/run";
+import { STAGES, STAGE_INDEX, stageName } from "@/app/components/stages";
 
 const RUN_INPUT_KEY = "rainmaker:runInput";
-
-const RAIL_STAGES: { stage: PipelineStage; label: string }[] = [
-  { stage: "icp", label: "ICP" },
-  { stage: "hunt", label: "Hunt" },
-  { stage: "scan", label: "Scan" },
-  { stage: "qualify", label: "Qualify" },
-  { stage: "enrich", label: "Enrich" },
-  { stage: "brief", label: "Brief" },
-];
-const RAIL_INDEX: Record<string, number> = {
-  icp: 0,
-  hunt: 1,
-  scan: 2,
-  qualify: 3,
-  enrich: 4,
-  brief: 5,
-};
 
 type RunResultData = Pick<RunResult, "icp" | "leads" | "disqualified"> & {
   stats: RunResult["stats"];
@@ -34,14 +18,25 @@ function isSignalEvent(event: PipelineEvent): boolean {
   if (event.stage !== "scan") return false;
   const data = event.data as { signals?: unknown[] } | undefined;
   return Array.isArray(data?.signals) && data.signals.length > 0;
-};
+}
+
+/** Warnings come through as plain messages; pick them out by their wording. */
+function isWarningEvent(event: PipelineEvent): boolean {
+  return /\b(failed|skipped|could not|rejected|no results|nothing to|stopping)\b/i.test(
+    event.message,
+  );
+}
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-};
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
 
 export default function RunPage() {
   const [noInput, setNoInput] = useState(false);
@@ -146,7 +141,7 @@ export default function RunPage() {
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setRunning(false);
       }
-    };
+    }
 
     function handleFrame(frame: SseFrame) {
       if (frame.type === "event") {
@@ -158,8 +153,8 @@ export default function RunPage() {
         const id = ++eventIdRef.current;
         setEvents((prev) => [...prev, { ...event, id }]);
 
-        if (event.stage in RAIL_INDEX) {
-          setStageIndex((prev) => Math.max(prev, RAIL_INDEX[event.stage]));
+        if (event.stage in STAGE_INDEX) {
+          setStageIndex((prev) => Math.max(prev, STAGE_INDEX[event.stage]));
         }
 
         if (event.stage === "hunt") {
@@ -180,7 +175,7 @@ export default function RunPage() {
           }
         }
       } else if (frame.type === "result") {
-        setStageIndex(RAIL_STAGES.length);
+        setStageIndex(STAGES.length);
         setResult({
           icp: frame.icp,
           leads: frame.leads,
@@ -196,99 +191,97 @@ export default function RunPage() {
 
   if (noInput) {
     return (
-      <div className="wrap" style={{ paddingTop: 60, paddingBottom: 60 }}>
-        <div className="error-card" style={{ maxWidth: 560, margin: "0 auto" }}>
-          <span className="eyebrow">No run to show</span>
+      <div className="wrap section">
+        <div className="sheet error-sheet narrow">
+          <span className="label">Nothing queued</span>
           <p>
-            Rainmaker doesn&rsquo;t have an agency URL or description queued up.
-            Start one from the setup screen.
+            There is no hunt to run. Give Rainmaker an agency website or a
+            description on the setup page first.
           </p>
-          <div style={{ marginTop: 18 }}>
+          <div className="actions">
             <a href="/" className="btn btn-primary">
-              Back to setup
+              Go to setup
             </a>
           </div>
         </div>
       </div>
     );
-  };
+  }
+
+  const status = running ? "running" : errorMessage ? "stopped" : "done";
+  const title = running ? "Hunting" : errorMessage ? "Hunt stopped" : "Hunt complete";
+  const leadCount = result?.leads.length ?? 0;
 
   return (
-    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 70 }}>
-      <div style={{ marginBottom: 26 }}>
-        <span className="eyebrow">Live run</span>
-        <h1 style={{ fontSize: 28, marginTop: 8, display: "flex", alignItems: "center", gap: 14 }}>
-          {running ? (
-            <span className="live">
-              <span className="pulse" />
-              Scanning
-            </span>
-          ) : errorMessage ? (
-            <span className="live" style={{ color: "var(--danger)" }}>
-              Stopped
-            </span>
-          ) : (
-            <span className="live" style={{ color: "var(--hot)" }}>
-              Run complete
-            </span>
-          )}
+    <div className="wrap section">
+      <div className="run-head rise">
+        <h1 className={`run-title ${status}`}>
+          {title}
+          {running ? <span className="ellipsis" aria-hidden="true" /> : null}
         </h1>
       </div>
 
-      <div className="stage-rail">
-        {RAIL_STAGES.map((item, index) => {
+      <ol className="front rise rise-2" aria-label="Stages">
+        {STAGES.map((item, index) => {
           const state =
-            stageIndex > index || stageIndex >= RAIL_STAGES.length
+            stageIndex > index || stageIndex >= STAGES.length
               ? "done"
               : stageIndex === index
                 ? "active"
                 : "";
           return (
-            <div key={item.stage} className={`stage ${state}`.trim()}>
-              <span className="stage-dot" />
-              <span className="stage-label">{item.label}</span>
-            </div>
+            <li key={item.stage} className={`front-node ${state}`.trim()}>
+              <span className="front-dot" />
+              <span className="front-name">{item.name}</span>
+            </li>
           );
         })}
+      </ol>
+
+      <div className="readouts rise rise-3" aria-live="polite">
+        <span className="readout">
+          <b>{pad(candidatesFound)}</b>
+          <span className="label">candidates</span>
+        </span>
+        <span className="readout">
+          <b>{pad(signalsFound)}</b>
+          <span className="label">signals</span>
+        </span>
+        <span className="readout">
+          <b>{formatElapsed(elapsedMs)}</b>
+          <span className="label">elapsed</span>
+        </span>
       </div>
 
-      <div className="counters">
-        <div className="counter">
-          <div className="num">{candidatesFound}</div>
-          <div className="lab">Candidates found</div>
-        </div>
-        <div className="counter">
-          <div className="num">{signalsFound}</div>
-          <div className="lab">Signals found</div>
-        </div>
-        <div className="counter">
-          <div className="num">{formatElapsed(elapsedMs)}</div>
-          <div className="lab">Elapsed</div>
-        </div>
-      </div>
-
-      <div className="console">
-        <div className="console-bar">
-          <span className="mono">Activity</span>
-          <span className={`mono${running ? " on" : ""}`}>
-            {running ? "● LISTENING" : "● IDLE"}
+      <div className="wire rise rise-4">
+        <div className="wire-bar">
+          <span>Wire</span>
+          <span className={running ? "on" : ""}>
+            {running ? (
+              <>
+                <span className="pulse" />
+                listening
+              </>
+            ) : (
+              "idle"
+            )}
           </span>
         </div>
         <div className="feed" ref={feedRef}>
           {events.length === 0 ? (
-            <div className="feed-empty">Waiting for the first event&hellip;</div>
+            <div className="feed-empty">Starting the hunt</div>
           ) : (
             events.map((event) => (
               <div
                 key={event.id}
-                className={`feed-line${isSignalEvent(event) ? " signal" : ""}`}
+                className={`feed-line${
+                  isSignalEvent(event) ? " signal" : isWarningEvent(event) ? " warn" : ""
+                }`}
               >
                 <span className="t">
-                  {typeof event.at === "number"
-                    ? `${(event.at / 1000).toFixed(1)}s`
-                    : ""}
+                  {typeof event.at === "number" ? `${(event.at / 1000).toFixed(1)}s` : ""}
                 </span>
-                <span className="chip-stage">{event.stage}</span>
+                <span className="st">{stageName(event.stage)}</span>
                 <span className="msg">{event.message}</span>
               </div>
             ))
@@ -297,16 +290,16 @@ export default function RunPage() {
       </div>
 
       {errorMessage ? (
-        <div className="error-card" style={{ marginTop: 24 }}>
-          <span className="eyebrow">Run failed</span>
+        <div className="sheet error-sheet">
+          <span className="label">Stopped</span>
           <p>{errorMessage}</p>
-          <div style={{ marginTop: 18, display: "flex", gap: 12 }}>
+          <div className="actions">
             <button
               type="button"
               className="btn btn-primary"
               onClick={() => window.location.reload()}
             >
-              Retry
+              Run it again
             </button>
             <a href="/" className="btn btn-ghost">
               Back to setup
@@ -316,26 +309,26 @@ export default function RunPage() {
       ) : null}
 
       {result ? (
-        <div className="card result-card" style={{ marginTop: 24 }}>
-          <span className="eyebrow">Done</span>
-          <div className="big-num">{result.leads.length}</div>
-          <div className="cap">
-            qualified lead{result.leads.length === 1 ? "" : "s"} &middot;{" "}
-            {result.disqualified.length} disqualified &middot; {formatElapsed(result.stats.durationMs)}
+        <div className="sheet result-sheet rise">
+          <div>
+            <div className="big">{leadCount}</div>
+            <div className="cap">
+              lead{leadCount === 1 ? "" : "s"} worth a call &middot;{" "}
+              {result.disqualified.length} disqualified &middot;{" "}
+              {formatElapsed(result.stats.durationMs)}
+            </div>
+            <div className="cost">
+              est. ${result.stats.estCostUsd.toFixed(2)}
+              {result.stats.reportedCostUsd
+                ? ` · reported $${result.stats.reportedCostUsd.toFixed(4)}`
+                : ""}
+            </div>
           </div>
-          <div className="cost">
-            est. cost ${result.stats.estCostUsd.toFixed(4)}
-            {result.stats.reportedCostUsd
-              ? ` · reported $${result.stats.reportedCostUsd.toFixed(4)}`
-              : ""}
-          </div>
-          <div className="result-actions">
-            <a href="/leads" className="btn btn-primary">
-              View ranked leads &rarr;
-            </a>
-          </div>
+          <a href="/leads" className="btn btn-primary">
+            Open the shortlist &rarr;
+          </a>
         </div>
       ) : null}
     </div>
   );
-};
+}

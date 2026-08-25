@@ -13,12 +13,12 @@ export function NavHeader() {
   const pathname = usePathname();
 
   return (
-    <div className="nav">
+    <header className="nav">
       <div className="nav-inner">
-        <Link href="/" className="brand">
+        <Link href="/" className="brand" aria-label="Rainmaker home">
           Rain<span className="drop">maker</span>
         </Link>
-        <nav className="nav-links">
+        <nav className="nav-links" aria-label="Sections">
           {LINKS.map((link) => {
             const active =
               link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
@@ -27,6 +27,7 @@ export function NavHeader() {
                 key={link.href}
                 href={link.href}
                 className={active ? "active" : undefined}
+                aria-current={active ? "page" : undefined}
               >
                 {link.label}
               </Link>
@@ -34,6 +35,6 @@ export function NavHeader() {
           })}
         </nav>
       </div>
-    </div>
+    </header>
   );
 }

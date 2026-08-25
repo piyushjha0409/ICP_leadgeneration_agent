@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Isobars } from "@/app/components/Isobars";
+import { SIGNAL_NAMES, STAGES } from "@/app/components/stages";
 
 export const RUN_INPUT_KEY = "rainmaker:runInput";
 
@@ -12,11 +14,27 @@ type LatestRunSummary = {
   disqualified?: unknown[];
 };
 
-type Tab = "url" | "description";
+type Mode = "url" | "description";
+
+function formatWhen(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** People type "acme.com"; the pipeline wants a URL. */
+function normalizeUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
 
 export default function HomePage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("url");
+  const [mode, setMode] = useState<Mode>("url");
   const [agencyUrl, setAgencyUrl] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -40,11 +58,15 @@ export default function HomePage() {
   function handleSubmit(evt: React.FormEvent) {
     evt.preventDefault();
 
-    const trimmedUrl = agencyUrl.trim();
-    const trimmedDescription = description.trim();
+    const trimmedUrl = mode === "url" ? normalizeUrl(agencyUrl) : "";
+    const trimmedDescription = mode === "description" ? description.trim() : "";
 
     if (!trimmedUrl && !trimmedDescription) {
-      setError("Give Rainmaker an agency URL or a short description to hunt from.");
+      setError(
+        mode === "url"
+          ? "Add your agency's website to start."
+          : "Describe the agency in a sentence or two to start.",
+      );
       return;
     }
 
@@ -59,120 +81,126 @@ export default function HomePage() {
     router.push("/run");
   }
 
+  const leadCount = summary?.leads?.length ?? 0;
+
   return (
     <>
-      <header className="hero">
-        <div className="wrap">
-          <div className="hero-grid">
-            <div>
-              <div className="live" style={{ marginBottom: 18 }}>
-                <span className="pulse" />
-                Autonomous &middot; Always scanning
-              </div>
-              <h1 className="title">
-                Rain<span className="drop">maker</span>
-              </h1>
-              <p className="subtitle">The ICP lead-generation agent</p>
-              <p className="lede">
-                Define your <b>Ideal Customer Profile</b> once. Rainmaker hunts the
-                open web for companies that match, spots the signals that mean
-                they need you now, and hands you a ranked, ready-to-contact
-                shortlist.
-              </p>
-            </div>
-            <div className="radar-wrap" aria-hidden="true">
-              <div className="radar">
-                <div className="sweep" />
-                <span className="blip b1" />
-                <span className="blip b2" />
-                <span className="blip b3" />
-                <span className="core" />
-              </div>
-            </div>
-          </div>
+      <section className="hero">
+        <div className="hero-field" aria-hidden="true">
+          <Isobars />
         </div>
-      </header>
 
-      <div className="wrap" style={{ paddingTop: 44, paddingBottom: 70 }}>
-        <div className="card" style={{ maxWidth: 640, margin: "0 auto" }}>
-          <span className="eyebrow">Start a run</span>
-          <h2 style={{ fontSize: 22, marginTop: 10, marginBottom: 18 }}>
-            Tell Rainmaker who you are
-          </h2>
-
-          <div className="tabs">
-            <button
-              type="button"
-              className={`tab${tab === "url" ? " active" : ""}`}
-              onClick={() => setTab("url")}
-            >
-              Agency URL
-            </button>
-            <button
-              type="button"
-              className={`tab${tab === "description" ? " active" : ""}`}
-              onClick={() => setTab("description")}
-            >
-              Describe it
-            </button>
+        <div className="wrap hero-grid">
+          <div className="hero-copy">
+            <h1 className="claim rise">
+              Finds the companies that will need an agency{" "}
+              <em>this quarter.</em>
+            </h1>
+            <p className="hero-sub rise rise-2">
+              Give it your agency website. It works out who you sell to, hunts
+              the open web for companies that match, and ranks them by how
+              badly they need you, and how soon.
+            </p>
+            <div className="listens rise rise-3">
+              <span className="label">Listens for</span>
+              <ul>
+                {Object.values(SIGNAL_NAMES).map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit}>
-            {tab === "url" ? (
+          <form className="station rise rise-2" onSubmit={handleSubmit} noValidate>
+            <div className="station-head">
+              <span className="label">Start a hunt</span>
+              <button
+                type="button"
+                className="switch"
+                onClick={() => {
+                  setError(null);
+                  setMode(mode === "url" ? "description" : "url");
+                }}
+              >
+                {mode === "url" ? "Describe it instead" : "Use the website instead"}
+              </button>
+            </div>
+
+            {mode === "url" ? (
               <div className="field">
                 <label htmlFor="agencyUrl">Agency website</label>
                 <input
                   id="agencyUrl"
                   type="url"
-                  placeholder="https://youragency.com"
+                  inputMode="url"
+                  autoComplete="url"
+                  spellCheck={false}
+                  placeholder="youragency.com"
                   value={agencyUrl}
                   onChange={(evt) => setAgencyUrl(evt.target.value)}
                 />
                 <p className="field-hint">
-                  Rainmaker reads the site to infer who you sell to.
+                  Rainmaker reads the site to work out who you sell to.
                 </p>
               </div>
             ) : (
               <div className="field">
-                <label htmlFor="description">What does the agency do?</label>
+                <label htmlFor="description">What the agency does, and for whom</label>
                 <textarea
                   id="description"
-                  placeholder="A performance-marketing agency for seed-to-Series-A B2B SaaS companies in the US, focused on paid acquisition and lifecycle email..."
+                  rows={5}
+                  placeholder="Performance marketing for seed-to-Series-A B2B SaaS in the US. Paid acquisition and lifecycle email."
                   value={description}
                   onChange={(evt) => setDescription(evt.target.value)}
                 />
-                <p className="field-hint">
-                  A couple of sentences on who you are and who you serve is enough.
-                </p>
+                <p className="field-hint">Two sentences is plenty.</p>
               </div>
             )}
 
-            {error ? <p className="error-text">{error}</p> : null}
+            {error ? (
+              <p className="error-text" role="alert">
+                {error}
+              </p>
+            ) : null}
 
             <button type="submit" className="btn btn-primary btn-block">
-              Start hunting
+              Run the hunt
             </button>
+            <p className="fineprint">
+              About three minutes. 24 web searches, 23 model calls, $0 on the
+              free tiers. Nothing is sent to anyone.
+            </p>
           </form>
         </div>
+      </section>
 
+      <section className="wrap below-hero">
         {summary && !summary.empty ? (
-          <div className="summary-strip" style={{ maxWidth: 640, margin: "22px auto 0" }}>
-            <div>
-              <div className="label">Latest run</div>
-              <div className="value">
-                <b>{summary.leads?.length ?? 0}</b> qualified leads &middot;{" "}
-                <b>{summary.disqualified?.length ?? 0}</b> disqualified
-                {summary.startedAt ? (
-                  <> &middot; {new Date(summary.startedAt).toLocaleString()}</>
-                ) : null}
-              </div>
-            </div>
+          <div className="lastrun rise rise-3">
+            <p>
+              <span className="label">Last hunt</span>
+              <b>
+                {leadCount} lead{leadCount === 1 ? "" : "s"}
+              </b>{" "}
+              worth a call &middot; {summary.disqualified?.length ?? 0} disqualified
+              {summary.startedAt ? <> &middot; {formatWhen(summary.startedAt)}</> : null}
+            </p>
             <a href="/leads" className="btn btn-ghost">
-              View leads &rarr;
+              Open the shortlist &rarr;
             </a>
           </div>
         ) : null}
-      </div>
+
+        <ol className="stages-strip rise rise-4" aria-label="What a hunt does">
+          {STAGES.map((item, index) => (
+            <li key={item.stage}>
+              <span className="stage-n">{index + 1}</span>
+              <span className="stage-name">{item.name}</span>
+              <span className="stage-blurb">{item.blurb}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
     </>
   );
 }

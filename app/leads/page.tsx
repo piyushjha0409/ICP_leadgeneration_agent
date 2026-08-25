@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { suggestTargetRole } from "@/src/lib/enrich";
 import type { Icp, Lead } from "@/src/pipeline/types";
+import { Gauge } from "@/app/components/Gauge";
+import { SIGNAL_NAMES } from "@/app/components/stages";
 
 type FeedbackDirection = "up" | "down";
 
@@ -18,32 +20,52 @@ type LeadsResponse =
       feedback: Record<string, FeedbackDirection>;
     };
 
-function formatSignalType(type: string): string {
-  return type
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+/** The qualify stage's rubric, in the same order and with the same maxima. */
+const RUBRIC = [
+  { key: "fit", label: "Fit", max: 40 },
+  { key: "pain", label: "Pain", max: 30 },
+  { key: "timing", label: "Timing", max: 30 },
+] as const;
+
+/**
+ * Score reasons arrive as "Fit: …", "Pain: …", "Timing: …". Lay them out as
+ * a reading against the rubric; anything that doesn't carry a prefix goes in
+ * an "Also" row rather than being dropped.
+ */
+function splitReasons(reasons: string[]) {
+  const byKey = new Map<string, string>();
+  const other: string[] = [];
+  for (const reason of reasons) {
+    const match = reason.match(/^\s*(fit|pain|timing)\s*[:—–-]\s*(.+)$/is);
+    const key = match?.[1]?.toLowerCase();
+    if (match && key && !byKey.has(key)) byKey.set(key, match[2].trim());
+    else other.push(reason);
+  }
+  return { byKey, other };
 }
 
-function ScoreRing({ score }: { score: number }) {
-  const pct = Math.max(0, Math.min(100, score));
-  return (
-    <div className="score">
-      <div
-        className="ring"
-        style={{
-          background: `conic-gradient(var(--hot) 0 ${pct}%, var(--border) ${pct}% 100%)`,
-        }}
-      >
-        <span>{Math.round(score)}</span>
-      </div>
-      <div className="cap">ICP-fit</div>
-    </div>
-  );
+function signalName(type: string): string {
+  return SIGNAL_NAMES[type] ?? type.replace(/_/g, " ");
 }
 
-/** The drafted message, hidden until asked for, copyable in one click. */
-function DraftFirstTouch({ message }: { message: string }) {
+function formatWhen(timestamp: number): string {
+  return new Date(timestamp).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+/** The drafted email, folded until asked for, copyable in one click. */
+function FirstEmail({ message }: { message: string }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -62,70 +84,88 @@ function DraftFirstTouch({ message }: { message: string }) {
     }
   }
 
+  const words = message.trim().split(/\s+/).filter(Boolean).length;
+
   return (
-    <details className="draft-box">
-      <summary>Draft first touch</summary>
-      <div className="draft-body">
-        <pre className="draft">{message}</pre>
+    <details className="telegram">
+      <summary>
+        <span>Read the email</span>
+        <span className="telegram-hint">{words} words</span>
+      </summary>
+      <div className="telegram-body">
+        <pre className="telegram-text">{message}</pre>
         <button
           type="button"
-          className={`copy-btn${copied ? " copied" : ""}`}
+          className={`btn btn-ghost btn-sm${copied ? " copied" : ""}`}
           onClick={handleCopy}
         >
-          {copied ? "Copied ✓" : "Copy"}
+          {copied ? "Copied" : "Copy message"}
         </button>
       </div>
     </details>
   );
 }
 
-function LeadCard({
+function Sheet({
   lead,
+  rank,
   suggestedRole,
   feedback,
   onFeedback,
 }: {
   lead: Lead;
+  rank: number;
   /** Who to aim at when enrichment could not name a person. */
   suggestedRole: string;
   feedback: FeedbackDirection | undefined;
   onFeedback: (domain: string, direction: FeedbackDirection) => void;
 }) {
   const { company, signals, scoreReasons } = lead;
+  const { byKey, other } = splitReasons(scoreReasons);
+  const score = Math.round(lead.score);
 
   return (
-    <div className="dossier">
-      <div className="dos-head">
-        <div>
-          <div className="co">{company.name}</div>
-          <div className="domain">
-            <a
-              href={`https://${company.domain}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {company.domain}
-            </a>
-          </div>
+    <article
+      className="sheet lead-sheet"
+      style={{ animationDelay: `${Math.min(rank - 1, 6) * 70}ms` }}
+    >
+      <header className="sheet-head">
+        <div className="sheet-id">
+          <span className="sheet-rank">#{rank}</span>
+          <h2 className="sheet-co">{company.name}</h2>
+          <a
+            className="sheet-domain"
+            href={`https://${company.domain}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {company.domain}
+          </a>
         </div>
-        <ScoreRing score={lead.score} />
-      </div>
+        <div className="gauge" role="img" aria-label={`Score ${score} out of 100`}>
+          <div className="gauge-num">
+            {score}
+            <small>/100</small>
+          </div>
+          <Gauge score={lead.score} />
+        </div>
+      </header>
 
-      <div className="dos-body">
+      <div className="sheet-body">
         {signals.length > 0 ? (
-          <div className="dos-row">
-            <div className="k">Signals detected</div>
-            <div className="chips">
+          <div className="row">
+            <div className="k">Signals</div>
+            <div className="v tags">
               {signals.map((signal, index) => (
                 <a
                   key={`${signal.type}-${index}`}
-                  className="chip"
+                  className="tag"
                   href={signal.sourceUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={signal.evidence}
                 >
-                  {formatSignalType(signal.type)}
+                  {signalName(signal.type)}
                   {signal.date ? <span className="date">{signal.date}</span> : null}
                 </a>
               ))}
@@ -133,11 +173,23 @@ function LeadCard({
           </div>
         ) : null}
 
-        {scoreReasons.length > 0 ? (
-          <div className="dos-row">
-            <div className="k">Why it scored this way</div>
-            <ul className="reasons">
-              {scoreReasons.map((reason, index) => (
+        {RUBRIC.map((item) =>
+          byKey.has(item.key) ? (
+            <div className="row" key={item.key}>
+              <div className="k">
+                {item.label}
+                <span className="max">/{item.max}</span>
+              </div>
+              <div className="v">{byKey.get(item.key)}</div>
+            </div>
+          ) : null,
+        )}
+
+        {other.length > 0 ? (
+          <div className="row">
+            <div className="k">Also</div>
+            <ul className="v plain">
+              {other.map((reason, index) => (
                 <li key={index}>{reason}</li>
               ))}
             </ul>
@@ -145,14 +197,14 @@ function LeadCard({
         ) : null}
 
         {lead.contact ? (
-          <div className="dos-row">
-            <div className="k">Right person to reach</div>
-            <div className="v contact-line">
-              <b>{lead.contact.name}</b> &mdash; {lead.contact.role}
+          <div className="row">
+            <div className="k">Reach</div>
+            <div className="v">
+              <b>{lead.contact.name}</b>, {lead.contact.role}
               {lead.contact.email ? (
                 <>
                   {" · "}
-                  <a className="contact-email" href={`mailto:${lead.contact.email}`}>
+                  <a className="email" href={`mailto:${lead.contact.email}`}>
                     {lead.contact.email}
                   </a>
                 </>
@@ -160,52 +212,61 @@ function LeadCard({
             </div>
           </div>
         ) : lead.pitchAngle ? (
-          <div className="dos-row">
-            <div className="k">Right person to reach</div>
-            <div className="v suggested-target">
-              Suggested target: <b>{suggestedRole}</b>
+          <div className="row">
+            <div className="k">Reach</div>
+            <div className="v soft">
+              No named contact yet. Aim for the <b>{suggestedRole}</b>.
             </div>
           </div>
         ) : null}
 
         {lead.pitchAngle ? (
-          <div className="dos-row">
-            <div className="k">Pitch angle</div>
+          <div className="row">
+            <div className="k">Angle</div>
             <div className="v">{lead.pitchAngle}</div>
           </div>
         ) : null}
 
         {lead.draftMessage ? (
-          <div className="dos-row">
-            <DraftFirstTouch message={lead.draftMessage} />
+          <div className="row">
+            <div className="k">First email</div>
+            <div className="v">
+              <FirstEmail message={lead.draftMessage} />
+            </div>
           </div>
         ) : null}
       </div>
 
-      <div className="dos-foot">
-        <div className="why-line">
-          {company.why ? <>Shortlisted because: {company.why}</> : null}
-        </div>
-        <div className="fb-row">
+      <footer className="sheet-foot">
+        <span className="foot-via" title={company.why}>
+          {company.discoveredVia ? (
+            <>
+              Found via <b>{company.discoveredVia}</b>
+            </>
+          ) : company.why ? (
+            <>Shortlisted: {company.why}</>
+          ) : null}
+        </span>
+        <div className="verdict" role="group" aria-label="Was this a good lead?">
           <button
             type="button"
-            className={`fb-btn up${feedback === "up" ? " active" : ""}`}
-            aria-label="Good lead"
+            className={`verdict-btn good${feedback === "up" ? " active" : ""}`}
+            aria-pressed={feedback === "up"}
             onClick={() => onFeedback(company.domain, "up")}
           >
-            &#128077;
+            Good lead
           </button>
           <button
             type="button"
-            className={`fb-btn down${feedback === "down" ? " active" : ""}`}
-            aria-label="Bad lead"
+            className={`verdict-btn bad${feedback === "down" ? " active" : ""}`}
+            aria-pressed={feedback === "down"}
             onClick={() => onFeedback(company.domain, "down")}
           >
-            &#128078;
+            Not a fit
           </button>
         </div>
-      </div>
-    </div>
+      </footer>
+    </article>
   );
 }
 
@@ -285,19 +346,17 @@ export default function LeadsPage() {
 
   if (loading) {
     return (
-      <div className="wrap" style={{ paddingTop: 60, paddingBottom: 60 }}>
-        <p className="mono" style={{ color: "var(--faint)" }}>
-          Loading leads&hellip;
-        </p>
+      <div className="wrap section">
+        <p className="loading">Loading the shortlist</p>
       </div>
     );
   }
 
   if (errorMessage) {
     return (
-      <div className="wrap" style={{ paddingTop: 60, paddingBottom: 60 }}>
-        <div className="error-card" style={{ maxWidth: 560, margin: "0 auto" }}>
-          <span className="eyebrow">Could not load leads</span>
+      <div className="wrap section">
+        <div className="sheet error-sheet narrow">
+          <span className="label">Could not load the shortlist</span>
           <p>{errorMessage}</p>
         </div>
       </div>
@@ -306,47 +365,60 @@ export default function LeadsPage() {
 
   if (!data || data.empty) {
     return (
-      <div className="wrap">
-        <div className="empty-state">
-          <span className="eyebrow">No leads yet</span>
-          <p style={{ marginTop: 12 }}>
-            Rainmaker hasn&rsquo;t completed a run yet. Start one from the setup
-            screen to build your first shortlist.
-          </p>
+      <div className="wrap section">
+        <div className="empty rise">
+          <h1 className="board-title">No shortlist yet</h1>
+          <p>Run a hunt and the ranked leads land here.</p>
           <a href="/" className="btn btn-primary">
-            Go to setup
+            Start a hunt
           </a>
         </div>
       </div>
     );
   }
 
+  const count = sortedLeads.length;
+
   return (
-    <div className="wrap" style={{ paddingTop: 40, paddingBottom: 70 }}>
-      <div className="leads-head">
+    <div className="wrap section">
+      <div className="board-head rise">
         <div>
-          <span className="eyebrow">Ranked shortlist</span>
-          <h1>{sortedLeads.length} qualified leads</h1>
-          <div className="meta">
-            Run finished {new Date(data.startedAt).toLocaleString()} &middot; est.
-            cost ${data.stats.estCostUsd.toFixed(4)}
-          </div>
+          <h1 className="board-title">
+            {count === 0
+              ? "Nothing qualified this time"
+              : `${count} lead${count === 1 ? "" : "s"} worth a call`}
+          </h1>
+          {data.icp ? (
+            <p className="board-icp">
+              Looking for <b>{data.icp.industry}</b> &middot; <b>{data.icp.companySize}</b>{" "}
+              &middot; <b>{data.icp.geography}</b>
+            </p>
+          ) : null}
+          <p className="board-meta">
+            Hunt finished {formatWhen(data.startedAt)} &middot;{" "}
+            {formatDuration(data.stats.durationMs)} &middot; est. $
+            {data.stats.estCostUsd.toFixed(2)}
+          </p>
         </div>
         <a href="/" className="btn btn-ghost">
-          New run
+          New hunt
         </a>
       </div>
 
-      {sortedLeads.length === 0 ? (
-        <div className="empty-state">
-          <p>No companies qualified in the latest run.</p>
+      {count === 0 ? (
+        <div className="empty">
+          <p>
+            No company cleared the bar. A broader description, or a different
+            site, usually does.
+          </p>
         </div>
       ) : (
-        <div className="lead-grid">
-          {sortedLeads.map((lead) => (
-            <LeadCard
+        <div className="sheets">
+          {sortedLeads.map((lead, index) => (
+            <Sheet
               key={lead.company.domain}
               lead={lead}
+              rank={index + 1}
               suggestedRole={suggestedRole}
               feedback={feedback[lead.company.domain]}
               onFeedback={handleFeedback}
@@ -356,8 +428,11 @@ export default function LeadsPage() {
       )}
 
       {data.disqualified.length > 0 ? (
-        <details className="disclosure">
-          <summary>Disqualified ({data.disqualified.length})</summary>
+        <details className="dq">
+          <summary>
+            <span>Disqualified ({data.disqualified.length})</span>
+            <span className="dq-hint">failed a hard ICP rule</span>
+          </summary>
           <div className="dq-list">
             {data.disqualified.map((lead) => (
               <div className="dq-row" key={lead.company.domain}>

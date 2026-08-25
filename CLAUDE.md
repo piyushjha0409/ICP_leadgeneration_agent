@@ -57,12 +57,12 @@ icp → hunt → scan → qualify → enrich → brief
 
 ### Web app
 
-- `app/page.tsx` — setup (URL/description tabs → sessionStorage handoff to `/run`)
+- `app/page.tsx` — setup: hero with the isobar pressure field (`components/Isobars.tsx`, deterministic contours — the app's one decorative element) and the input "station" card (website / describe-it switch → sessionStorage handoff to `/run`; bare domains get `https://` prepended), last-hunt strip, six-stage strip
 - `app/api/run/stream/route.ts` — POST returns an SSE `ReadableStream`; bridges `runPipeline`'s `onEvent` callback to `data:` frames (`type: "event" | "result" | "error"`), persists the finished run, and feeds `store.seenDomains` back in as hunt's `excludeDomains` (cross-run dedupe)
-- `app/run/page.tsx` — consumes that stream with a hand-rolled fetch/reader parser (chunk-buffered on `\n\n`, StrictMode-guarded); stage rail, activity feed, counters
-- `app/leads/page.tsx` — ranked dossier cards (score ring, signal chips → sourceUrl, contact/pitch/draft with copy, 👍/👎 toggle via `/api/feedback`)
+- `app/run/page.tsx` — consumes that stream with a hand-rolled fetch/reader parser (chunk-buffered on `\n\n`, StrictMode-guarded; feed ids are taken *before* the state updater so batched frames can't share a key); the six stages as a "front line", a readout strip, and the "wire" feed (signal events amber, warnings detected by wording and red-labelled)
+- `app/leads/page.tsx` — ranked dossier sheets: barometer scale (`components/Gauge.tsx`), Fit /40 · Pain /30 · Timing /30 rows parsed from the `Fit:`/`Pain:`/`Timing:` prefixes qualify puts on `scoreReasons` (unprefixed reasons fall into an "Also" row, never dropped), signal tags → sourceUrl, reach/angle/first-email with copy, "Good lead / Not a fit" toggle via `/api/feedback`
 - `src/lib/store.ts` — lowdb at `data/db.json` (gitignored), `globalThis`-cached singleton for dev hot-reload; keeps last 10 runs, feedback map, seenDomains
-- Styling: no CSS framework; design tokens in `app/globals.css` are ported from `rainmaker-pitch.html` (dark "signal console": bg `#0A0F16`, accent `#3BB4FF`, amber `#F5B33D`, mono labels)
+- Styling: no CSS framework; the palette in `app/globals.css` is ported from `rainmaker-pitch.html` and pinned (dark "signal console": bg `#0A0F16`, accent `#3BB4FF`, amber `#F5B33D`). Type is self-hosted by `next/font` in `app/layout.tsx`: Bricolage Grotesque (display — wordmark, one claim per page, big readouts; used with restraint), Schibsted Grotesk (body), Martian Mono (instrument labels; its `wdth` axis narrowed to 85–90 on the wire and tags). `components/stages.ts` is the single source of stage names/blurbs and signal names, shared by all three pages. UI work follows the brief in `.agents/skills/frontend-design/SKILL.md` — structure should encode real data (ranks, the rubric, the six signal types), not decorate
 
 <!-- BEGIN:nextjs-agent-rules -->
 
