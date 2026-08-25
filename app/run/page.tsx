@@ -34,14 +34,14 @@ function isSignalEvent(event: PipelineEvent): boolean {
   if (event.stage !== "scan") return false;
   const data = event.data as { signals?: unknown[] } | undefined;
   return Array.isArray(data?.signals) && data.signals.length > 0;
-}
+};
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
+};
 
 export default function RunPage() {
   const [noInput, setNoInput] = useState(false);
@@ -146,7 +146,7 @@ export default function RunPage() {
         setErrorMessage(err instanceof Error ? err.message : String(err));
         setRunning(false);
       }
-    }
+    };
 
     function handleFrame(frame: SseFrame) {
       if (frame.type === "event") {
@@ -211,7 +211,7 @@ export default function RunPage() {
         </div>
       </div>
     );
-  }
+  };
 
   return (
     <div className="wrap" style={{ paddingTop: 40, paddingBottom: 70 }}>
@@ -338,4 +338,4 @@ export default function RunPage() {
       ) : null}
     </div>
   );
-}
+};
