@@ -21,11 +21,23 @@ import {
  * the model to rank.
  */
 
+/**
+ * Structural checks only. Semantic limits — a score in range, at least one
+ * reason — are repaired in code below rather than enforced here. The shared
+ * output contract tells the model empty arrays are acceptable, so a `.min(1)`
+ * on scoreReasons aborted whole batches live whenever the model left a
+ * disqualified company's reasons empty. One malformed company must not cost
+ * the run every other score.
+ */
 const EvaluationSchema = z.object({
   /** Must echo one of the domains given in the input list. */
   domain: z.string(),
-  score: z.number().min(0).max(100),
-  scoreReasons: z.array(z.string()).min(1),
+  score: z.number(),
+  scoreReasons: z
+    .array(z.string())
+    .describe(
+      'One line per rubric dimension, in order: "Fit: <points> — <reason>", "Pain: <points> — <reason>", "Timing: <points> — <reason>", plus at most one extra note. Required for every company, disqualified ones included — never empty.',
+    ),
   disqualified: z.boolean(),
   disqualifiedReason: z.string().optional(),
 });
@@ -47,6 +59,8 @@ export type QualifyResult = {
   usage: UsageTotals;
   /** Domains the model failed to return a verdict for. */
   unscored: string[];
+  /** Domains that got a score but no reasons; a placeholder was substituted. */
+  withoutReasons: string[];
 };
 
 export const QUALIFY_RUBRIC = `SCORING RUBRIC — score = fit + pain + timing, out of 100.
@@ -91,6 +105,7 @@ You will be given the agency's ICP and a list of researched companies with the w
 Principles:
 - Judge the companies against each other, not in isolation. A ranked list is the product.
 - Every scoreReason must cite something specific from that company's own data — a named signal, a concrete ICP mismatch, an observation about their site. Reasons that would read identically for any company are worthless; do not write them.
+- Disqualified companies get scoreReasons too. The verdict goes in disqualifiedReason; the rubric reading still goes in scoreReasons, so a reader can see how close it came.
 - Be sceptical. Weak evidence deserves a low score, not a generous one.
 - Return exactly one evaluation for every company given, using the company's domain verbatim as the key. Do not add companies, do not skip companies.`;
 
@@ -154,7 +169,8 @@ export function buildQualifyPrompt(
     "=== END COMPANIES ===",
     "",
     `Return exactly ${scanned.length} evaluations — one per company, keyed by the exact domain string given above.`,
-    "For each: score (0-100, the rubric total), scoreReasons (2 to 4 short, specific reasons), disqualified (true/false), and disqualifiedReason when disqualified is true.",
+    "For each: score (0-100, the rubric total); disqualified (true/false); disqualifiedReason when disqualified is true; and scoreReasons — required for EVERY company, disqualified ones included, never an empty array.",
+    'scoreReasons is three short strings in this order, each opening with its dimension and the points you gave it: "Fit: 32 — <specific reason>", "Pain: 18 — <specific reason>", "Timing: 6 — <specific reason>". The three must add up to the score. Add at most one extra note after them.',
   ].join("\n");
 }
 
@@ -172,7 +188,13 @@ export async function qualifyLeads(
 
   if (scanned.length === 0) {
     onEvent?.({ stage: "qualify", message: "Nothing to qualify" });
-    return { leads: [], disqualified: [], usage: emptyUsage(), unscored: [] };
+    return {
+      leads: [],
+      disqualified: [],
+      usage: emptyUsage(),
+      unscored: [],
+      withoutReasons: [],
+    };
   }
 
   onEvent?.({
@@ -207,6 +229,7 @@ export async function qualifyLeads(
   const leads: Lead[] = [];
   const disqualified: Lead[] = [];
   const unscored: string[] = [];
+  const withoutReasons: string[] = [];
 
   for (const item of scanned) {
     const evaluation = byDomain.get(normalizeDomain(item.company.domain));
@@ -225,22 +248,32 @@ export async function qualifyLeads(
       continue;
     }
 
+    const disqualifiedReason =
+      evaluation.disqualifiedReason?.trim() || "Structural mismatch with the ICP.";
+
+    // The prompt asks for 3-4; trim rather than fail the whole batch.
+    const scoreReasons = evaluation.scoreReasons
+      .map((reason) => reason.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    if (scoreReasons.length === 0) {
+      // A verdict with no reasons is still a verdict. Substitute something
+      // honest and flag it, rather than letting one company fail the batch.
+      withoutReasons.push(item.company.domain);
+      scoreReasons.push(
+        evaluation.disqualified
+          ? disqualifiedReason
+          : "The scoring model returned a score but no reasons for it.",
+      );
+    }
+
     const lead = LeadSchema.parse({
       company: item.company,
       signals: item.signals,
       score: Math.round(Math.max(0, Math.min(100, evaluation.score))),
-      // The prompt asks for 2-4; trim rather than fail the whole batch.
-      scoreReasons: evaluation.scoreReasons
-        .map((reason) => reason.trim())
-        .filter(Boolean)
-        .slice(0, 4),
+      scoreReasons,
       ...(evaluation.disqualified
-        ? {
-            disqualified: true,
-            disqualifiedReason:
-              evaluation.disqualifiedReason?.trim() ||
-              "Structural mismatch with the ICP.",
-          }
+        ? { disqualified: true, disqualifiedReason }
         : {}),
     });
 
@@ -261,8 +294,9 @@ export async function qualifyLeads(
         score: lead.score,
       })),
       unscored,
+      withoutReasons,
     },
   });
 
-  return { leads, disqualified, usage, unscored };
+  return { leads, disqualified, usage, unscored, withoutReasons };
 }

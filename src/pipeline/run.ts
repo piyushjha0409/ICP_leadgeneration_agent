@@ -189,6 +189,11 @@ export async function runPipeline(
       `qualify: no verdict returned for ${qualifyResult.unscored.join(", ")}`,
     );
   }
+  if (qualifyResult.withoutReasons.length > 0) {
+    warnings.push(
+      `qualify: scored without reasons — ${qualifyResult.withoutReasons.join(", ")}`,
+    );
+  }
 
   // Enrichment and briefing are spent only on the leads someone will call.
   const topN = opts.topN ?? PIPELINE_DEFAULTS.topN;
